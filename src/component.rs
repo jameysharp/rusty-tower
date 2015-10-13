@@ -6,38 +6,68 @@ pub trait Monitor {
 	const MONITOR_INIT : Self;
 }
 
-pub struct Counter {
-	count: usize,
-	enabled: bool,
+macro_rules! monitor_state {
+	($monitor:ident {}) => (
+		pub struct $monitor;
+		impl Monitor for $monitor {
+			const MONITOR_INIT : $monitor = $monitor;
+		}
+	);
+	($monitor:ident {
+		$( $statename:ident : $statetype:ty = $stateinit:expr, )+
+	}) => (
+		pub struct $monitor {
+			$( $statename : $statetype, )*
+		}
+
+		impl Monitor for $monitor {
+			const MONITOR_INIT : $monitor = $monitor {
+				$( $statename : $stateinit, )*
+			};
+		}
+	);
 }
 
-impl Monitor for Counter {
-	const MONITOR_INIT : Counter = Counter { count: 0, enabled: false };
+macro_rules! monitor {
+	(
+		state $monitor:ident $state:tt
+		$( handler $name:ident ( $_self:ident , $chan:ident : $chantype:ty ) ($($emitter:ident : $emittype:ty),*) $body:block )*
+	) => {
+		monitor_state!($monitor $state);
+		impl $monitor {
+			$( pub fn $name(&mut self, $chan : $chantype $(, $emitter : &mut Emitter<$emittype>)*)
+			{
+				let $_self = self;
+				$body
+			})*
+		}
+	}
 }
 
-impl Counter {
-	pub fn event<T : Emitter<usize>>(&mut self, _event: (), current: &mut T)
+monitor! {
+	state Counter {
+		count: usize = 0,
+		enabled: bool = false,
+	}
+
+	handler event (state, _event: ()) (current: usize)
 	{
-		if self.enabled {
-			self.count += 1;
-			current.emit(self.count);
+		if state.enabled {
+			state.count += 1;
+			current.emit(state.count);
 		}
 	}
 
-	pub fn set_enabled(&mut self, enabled: bool)
+	handler set_enabled (state, enabled: bool) ()
 	{
-		self.enabled = enabled;
+		state.enabled = enabled;
 	}
 }
 
-pub struct Printer;
+monitor! {
+	state Printer { }
 
-impl Monitor for Printer {
-	const MONITOR_INIT : Printer = Printer;
-}
-
-impl Printer {
-	pub fn count_changed(&mut self, new_count: usize)
+	handler count_changed (_state, new_count: usize) ()
 	{
 		println!("new count: {}", new_count);
 	}
